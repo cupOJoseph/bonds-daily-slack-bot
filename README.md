@@ -1,7 +1,7 @@
 # Bond Buyer Daily Bot
 
-Posts a short morning digest of the most important Bond Buyer articles to Slack,
-weekdays at 8:00 AM Eastern.
+Reads the Bond Buyer and posts updates to Slack daily, after finding the most
+interesting or important topics with AI. Runs weekdays at 8:00 AM Eastern.
 
 ## How it works
 
