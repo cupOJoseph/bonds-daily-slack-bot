@@ -1,0 +1,19 @@
+{
+  "name": "bond-buyer-daily-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Posts a morning digest of the most important Bond Buyer articles to Slack",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "digest": "node src/digest.mjs",
+    "digest:local": "node --env-file=.env src/digest.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "fast-xml-parser": "^5.2.5",
+    "zod": "^4.1.5"
+  }
+}

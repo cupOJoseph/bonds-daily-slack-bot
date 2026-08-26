@@ -1,0 +1,37 @@
+name: Bond Buyer daily digest
+
+on:
+  schedule:
+    # Both slots fire so that one of them is always 8:00 AM Eastern;
+    # the script exits immediately on the one that isn't (DST guard).
+    - cron: "0 12 * * 1-5" # 8am EDT
+    - cron: "0 13 * * 1-5" # 8am EST
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the Slack payload instead of posting"
+        type: boolean
+        default: false
+      lookback_hours:
+        description: "Override the article window (hours)"
+        type: string
+        default: ""
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    environment: prod
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node src/digest.mjs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          LOOKBACK_HOURS: ${{ inputs.lookback_hours }}
