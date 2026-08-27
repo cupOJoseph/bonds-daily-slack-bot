@@ -2,10 +2,11 @@ name: Bond Buyer daily digest
 
 on:
   schedule:
-    # Both slots fire so that one of them is always 8:00 AM Eastern;
-    # the script exits immediately on the one that isn't (DST guard).
-    - cron: "0 12 * * 1-5" # 8am EDT
-    - cron: "0 13 * * 1-5" # 8am EST
+    # Both slots fire so that one of them is always ~8am Eastern; the script
+    # exits immediately on the one that isn't (DST guard). Minute :07 avoids
+    # GitHub's top-of-the-hour congestion, where scheduled runs get dropped.
+    - cron: "7 12 * * 1-5" # 8:07am EDT
+    - cron: "7 13 * * 1-5" # 8:07am EST
   workflow_dispatch:
     inputs:
       dry_run:
