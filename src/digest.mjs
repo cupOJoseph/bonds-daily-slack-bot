@@ -104,7 +104,7 @@ const DigestSchema = z.object({
   overview: z
     .string()
     .describe(
-      "One or two plain sentences capturing the day's overall theme for the municipal bond market."
+      "One sentence, 30 words max, capturing the day's overall theme for the municipal bond market."
     ),
   picks: z
     .array(
@@ -113,10 +113,16 @@ const DigestSchema = z.object({
         url: z.string().describe("The article's URL, verbatim"),
         summary: z
           .string()
-          .describe("Two to three sentences summarizing the article's substance"),
+          .describe(
+            "One or two tight sentences, 35 words max. Lead with the concrete fact " +
+            "(who, what, how much). No preamble, no restating the headline."
+          ),
         whyItMatters: z
           .string()
-          .describe("One sentence on why this matters to a municipal finance startup"),
+          .describe(
+            "A single short clause, 15 words max, on why it matters to a municipal " +
+            "finance startup. Omit if it would just restate the summary."
+          ),
       })
     )
     .min(1)
@@ -150,7 +156,10 @@ async function summarize(articles, dateLabel) {
       "Prioritize market-moving news: rating actions, notable deals, regulatory and " +
       "policy changes, market structure shifts, and major issuer credit stories. " +
       "Deprioritize personnel announcements, obituaries, and event promos unless truly " +
-      "significant. Use only the provided articles; never invent facts or URLs.",
+      "significant. Use only the provided articles; never invent facts or URLs. " +
+      "Be concise above all: this is a scannable brief, not an article. Short " +
+      "declarative sentences, concrete numbers, no filler like \"the article " +
+      "discusses\" or \"this development highlights\".",
     messages: [
       {
         role: "user",
@@ -183,9 +192,15 @@ export function buildSlackPayload(digest, dateLabel, timeLabel = "") {
     { type: "header", text: { type: "plain_text", text: "The Bond Buyer — Daily Brief", emoji: true } },
     {
       type: "context",
-      elements: [{ type: "mrkdwn", text: `${dateLabel} · ${timeLabel}` }],
+      elements: [{ type: "mrkdwn", text: `${dateLabel} · Posted ${timeLabel}` }],
     },
-    { type: "section", text: { type: "mrkdwn", text: mrkdwnEscape(digest.overview) } },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Overview of the day*\n${mrkdwnEscape(digest.overview)}`,
+      },
+    },
     { type: "divider" },
     ...digest.picks.map((pick) => ({
       type: "section",
