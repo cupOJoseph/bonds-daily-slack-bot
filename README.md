@@ -5,28 +5,46 @@ interesting or important topics with AI. Runs weekdays at 8:00 AM Eastern.
 
 ## How it works
 
-1. A GitHub Actions cron job runs each weekday morning (two UTC slots cover
-   daylight saving; the script only proceeds in the slot that is 8am ET).
+1. **Vercel Cron** hits `/api/digest` on the production deployment at 12:07 and
+   13:07 UTC, Mon-Fri. Whichever one is 8:07 AM Eastern proceeds; the other
+   (7:07 or 9:07 ET, depending on DST) exits immediately. Vercel Pro fires
+   crons within the scheduled minute, so that hour check has ~53 min of slack.
 2. [src/digest.mjs](src/digest.mjs) pulls `bondbuyer.com/feed?rss=true`, keeps
    articles from the last 24 hours (72 on Mondays to cover the weekend), and
    fetches each article's full text.
-3. Claude (`claude-sonnet-5`) picks the 3–5 most important stories and writes
-   summaries with a "why it matters" line for the team.
+3. Claude (`claude-sonnet-5`) picks the 3-5 most important stories and writes
+   short summaries with a "why it matters" line for the team.
 4. The digest is posted to Slack via an incoming webhook, with links back to
    each article.
 
 ## Setup
 
-1. **Slack webhook**: create a Slack app at <https://api.slack.com/apps> →
-   *Create New App* → *From scratch*. Under **Incoming Webhooks**, toggle it on,
-   click *Add New Webhook to Workspace*, and pick the target channel. Copy the
-   webhook URL.
-2. **GitHub repo**: push this directory to a (private) GitHub repo.
-3. **Secrets**: in the repo → Settings → Secrets and variables → Actions, add:
-   - `ANTHROPIC_API_KEY`
-   - `SLACK_WEBHOOK_URL`
-4. Test it: Actions tab → *Bond Buyer daily digest* → *Run workflow* (check
-   *dry run* first if you want to see the payload in the logs without posting).
+**Vercel** (the scheduler): import this repo as a Vercel project, framework
+preset "Other", no build command. Add three Production environment variables:
+
+| Variable | Value |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | from console.anthropic.com |
+| `SLACK_WEBHOOK_URL` | Slack app -> Incoming Webhooks |
+| `CRON_SECRET` | any random 16+ char string; Vercel sends it as `Authorization: Bearer ...` |
+
+Deploy to production -- crons only run against the production deployment, and
+only after a deploy that includes `vercel.json`.
+
+**Manual/dry runs** against the deployment:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://<project>.vercel.app/api/digest?dry=1"
+```
+
+`?dry=1` builds the digest and returns it without posting (and bypasses the
+hour check). `?force=1` posts outside the morning window. `?lookback=48`
+widens the article window.
+
+The GitHub Actions workflow is manual-only now (no `schedule:`), kept as a
+fallback path that cannot double-post alongside Vercel. It still needs the
+`ANTHROPIC_API_KEY` / `SLACK_WEBHOOK_URL` secrets in the `prod` environment.
 
 ## Local testing
 
@@ -41,12 +59,12 @@ article window (useful for testing on a quiet day).
 
 ## Notes
 
-- **GitHub's cron is best-effort and has been observed firing hours late.**
-  The job therefore never checks the clock; instead a per-Eastern-day cache
-  lock (`digest-posted-<date>`) guarantees exactly one digest per weekday, so
-  both cron slots and any delayed firing race safely. The lock is only taken
-  after a successful real post, so a failure leaves the day open for retry.
-  The Slack header shows the actual send time, not a hardcoded 8:00.
+- Scheduling moved from GitHub Actions to Vercel Cron: GitHub delivered this
+  job ~10 hours late (6:12 PM ET) or skipped the day entirely, while Vercel Pro
+  guarantees per-minute precision. The Slack header shows the actual send time.
+- Vercel cron delivery is best effort and can, rarely, invoke the same schedule
+  twice; there is no cross-invocation lock, so a duplicate post is possible. If
+  that ever happens, the fix is a Redis/KV lock keyed on the Eastern date.
 - The digest posts a one-line "no new articles" note rather than staying
   silent, so a broken run is distinguishable from a quiet news day.
 - Article text is extracted from the page's `RichTextArticleBody` container;

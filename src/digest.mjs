@@ -244,14 +244,16 @@ async function postToSlack(payload) {
   }
 }
 
-// ---------- main ----------
+// ---------- entry point ----------
 
-async function main() {
+// Shared by the CLI and the Vercel cron route. Returns a summary of what it
+// did so the HTTP caller can report it without re-deriving anything.
+export async function runDigest({ dryRun = false, lookbackHours: override } = {}) {
   const now = new Date();
   const eastern = easternParts(now);
 
   const defaultLookback = eastern.weekday === "Mon" ? 72 : 24;
-  const lookbackHours = Number(process.env.LOOKBACK_HOURS) || defaultLookback;
+  const lookbackHours = Number(override) || defaultLookback;
   const cutoff = new Date(now.getTime() - lookbackHours * 3600 * 1000);
 
   console.log(`Fetching feed (articles since ${cutoff.toISOString()})...`);
@@ -265,9 +267,9 @@ async function main() {
     const payload = {
       text: `The Bond Buyer — no new articles in the last ${lookbackHours} hours.`,
     };
-    if (process.env.DRY_RUN === "1") console.log(JSON.stringify(payload, null, 2));
+    if (dryRun) console.log(JSON.stringify(payload, null, 2));
     else await postToSlack(payload);
-    return;
+    return { posted: !dryRun, picks: 0, articles: 0, dryRun, payload };
   }
 
   const articles = await Promise.all(
@@ -287,12 +289,29 @@ async function main() {
   const digest = await summarize(articles, eastern.dateLabel);
   const payload = buildSlackPayload(digest, eastern.dateLabel, eastern.timeLabel);
 
-  if (process.env.DRY_RUN === "1") {
+  if (dryRun) {
     console.log(JSON.stringify(payload, null, 2));
-    return;
+    return { posted: false, picks: digest.picks.length, articles: articles.length, dryRun, payload };
   }
+
   await postToSlack(payload);
   console.log(`Posted digest with ${digest.picks.length} picks to Slack.`);
+  return { posted: true, picks: digest.picks.length, articles: articles.length, dryRun, payload };
+}
+
+// Which Eastern hour counts as "the morning slot". Vercel fires two UTC crons
+// (12:07 and 13:07) so one of them is always this hour, whatever DST is doing.
+export const DIGEST_HOUR_ET = 8;
+
+export function easternNow(date = new Date()) {
+  return easternParts(date);
+}
+
+async function main() {
+  await runDigest({
+    dryRun: process.env.DRY_RUN === "1",
+    lookbackHours: process.env.LOOKBACK_HOURS,
+  });
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {

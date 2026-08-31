@@ -1,27 +1,20 @@
-name: Bond Buyer daily digest
+# The daily schedule now lives in vercel.json (Vercel Pro cron fires within the
+# scheduled minute; GitHub's best-effort cron delivered this job hours late or
+# not at all). This workflow is kept for manual runs only -- deliberately no
+# `schedule:` trigger, so it can never double-post alongside Vercel.
+name: Bond Buyer digest (manual)
 
 on:
-  schedule:
-    # Two slots so one lands near 8am ET year-round (DST), and so a slot that
-    # GitHub drops or delays badly still has a second chance. GitHub's cron is
-    # best-effort and has been observed hours late, so the job does NOT check
-    # the clock -- a per-day lock (below) keeps it to one digest per weekday.
-    - cron: "7 12 * * 1-5" # ~8:07am EDT
-    - cron: "7 13 * * 1-5" # ~8:07am EST
   workflow_dispatch:
     inputs:
       dry_run:
         description: "Print the Slack payload instead of posting"
         type: boolean
-        default: false
+        default: true
       lookback_hours:
         description: "Override the article window (hours)"
         type: string
         default: ""
-
-concurrency:
-  group: bond-buyer-digest
-  cancel-in-progress: false
 
 jobs:
   digest:
@@ -30,53 +23,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
-      - name: Today's Eastern date
-        id: et
-        run: echo "date=$(TZ=America/New_York date +%F)" >> "$GITHUB_OUTPUT"
-
-      # Per-day lock: if a digest already posted for this Eastern date, the
-      # cache key exists and this run exits. Lets both cron slots (and any
-      # delayed firing) race safely -- first one through wins.
-      - name: Check today's lock
-        id: lock
-        if: github.event_name == 'schedule'
-        uses: actions/cache/restore@v4
-        with:
-          path: .digest-lock
-          key: digest-posted-${{ steps.et.outputs.date }}
-          lookup-only: true
-
-      - name: Already posted today
-        if: steps.lock.outputs.cache-hit == 'true'
-        run: echo "A digest already posted for ${{ steps.et.outputs.date }} ET; nothing to do."
-
       - uses: actions/setup-node@v4
-        if: steps.lock.outputs.cache-hit != 'true'
         with:
           node-version: 22
           cache: npm
-
       - run: npm ci
-        if: steps.lock.outputs.cache-hit != 'true'
-
-      - name: Build and post digest
-        if: steps.lock.outputs.cache-hit != 'true'
-        run: node src/digest.mjs
+      - run: node src/digest.mjs
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
           LOOKBACK_HOURS: ${{ inputs.lookback_hours }}
-
-      # Only taken on a successful real post, so a failed or dry run leaves
-      # the day unlocked and the next slot retries.
-      - name: Take today's lock
-        if: success() && github.event_name == 'schedule' && steps.lock.outputs.cache-hit != 'true'
-        run: date -u > .digest-lock
-      - name: Save today's lock
-        if: success() && github.event_name == 'schedule' && steps.lock.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .digest-lock
-          key: digest-posted-${{ steps.et.outputs.date }}
