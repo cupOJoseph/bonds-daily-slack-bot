@@ -31,13 +31,18 @@ function easternParts(date = new Date()) {
     month: "long",
     day: "numeric",
     hour: "numeric",
+    minute: "2-digit",
     hour12: false,
   }).formatToParts(date);
   const get = (type) => parts.find((p) => p.type === type)?.value;
+  const hour = Number(get("hour")) % 24;
+  const minute = get("minute");
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
   return {
     weekday: get("weekday"),
-    hour: Number(get("hour")) % 24,
+    hour,
     dateLabel: `${get("weekday")}, ${get("month")} ${get("day")}, ${get("year")}`,
+    timeLabel: `${hour12}:${minute} ${hour < 12 ? "AM" : "PM"} ET`,
   };
 }
 
@@ -173,12 +178,12 @@ function slackLink(url, label) {
   return `<${url}|${mrkdwnEscape(label).replace(/\|/g, "-")}>`;
 }
 
-export function buildSlackPayload(digest, dateLabel) {
+export function buildSlackPayload(digest, dateLabel, timeLabel = "") {
   const blocks = [
     { type: "header", text: { type: "plain_text", text: "The Bond Buyer — Daily Brief", emoji: true } },
     {
       type: "context",
-      elements: [{ type: "mrkdwn", text: `${dateLabel} · 8:00 AM ET` }],
+      elements: [{ type: "mrkdwn", text: `${dateLabel} · ${timeLabel}` }],
     },
     { type: "section", text: { type: "mrkdwn", text: mrkdwnEscape(digest.overview) } },
     { type: "divider" },
@@ -230,13 +235,6 @@ async function main() {
   const now = new Date();
   const eastern = easternParts(now);
 
-  // The workflow schedules 12:00 and 13:00 UTC so one of them is 8am ET
-  // year-round; the other lands at 7am or 9am ET and must exit here.
-  if (process.env.GITHUB_EVENT_NAME === "schedule" && eastern.hour !== 8) {
-    console.log(`Scheduled run at ${eastern.hour}:00 ET is not the 8am slot; skipping.`);
-    return;
-  }
-
   const defaultLookback = eastern.weekday === "Mon" ? 72 : 24;
   const lookbackHours = Number(process.env.LOOKBACK_HOURS) || defaultLookback;
   const cutoff = new Date(now.getTime() - lookbackHours * 3600 * 1000);
@@ -272,7 +270,7 @@ async function main() {
 
   console.log("Summarizing with Claude...");
   const digest = await summarize(articles, eastern.dateLabel);
-  const payload = buildSlackPayload(digest, eastern.dateLabel);
+  const payload = buildSlackPayload(digest, eastern.dateLabel, eastern.timeLabel);
 
   if (process.env.DRY_RUN === "1") {
     console.log(JSON.stringify(payload, null, 2));

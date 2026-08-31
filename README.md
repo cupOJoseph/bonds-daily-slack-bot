@@ -41,7 +41,12 @@ article window (useful for testing on a quiet day).
 
 ## Notes
 
-- GitHub Actions cron can drift 5–15 minutes past the hour under load.
+- **GitHub's cron is best-effort and has been observed firing hours late.**
+  The job therefore never checks the clock; instead a per-Eastern-day cache
+  lock (`digest-posted-<date>`) guarantees exactly one digest per weekday, so
+  both cron slots and any delayed firing race safely. The lock is only taken
+  after a successful real post, so a failure leaves the day open for retry.
+  The Slack header shows the actual send time, not a hardcoded 8:00.
 - The digest posts a one-line "no new articles" note rather than staying
   silent, so a broken run is distinguishable from a quiet news day.
 - Article text is extracted from the page's `RichTextArticleBody` container;
